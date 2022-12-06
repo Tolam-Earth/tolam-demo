@@ -91,9 +91,10 @@ There are a number of variables that need to be set in docker-compose.yml before
 
 In the marketplace section, set the following variables:
 ```
-    HEM_OPERATOR_ID=<Hedera ID for Marketplace operator>
-    HEM_PRIVATE_KEY=<Private key for Marketplace operator>
-    HEM_OFFSETS_CONTRACT_ID=<Smart contract ID>
+    HEM_HEDERA_OPERATOR_ID=<Hedera ID for Marketplace operator>
+    HEM_HEDERA_PRIVATE_KEY=<Private key for Marketplace operator>
+    HEM_HEDERA_OFFSETS_CONTRACT_ID=<Smart contract ID>
+    HEM_LWORKS_API_KEY=<API key from Ledger Works>
 ```
 In the integration_orchestrator section, set the following variables:
 ```
