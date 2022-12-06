@@ -1,0 +1,200 @@
+version: "3.8"
+x-logging:
+  &armm-logging
+  options:
+    max-size: '12m'
+    max-file: '5'
+  driver: json-file
+
+services:
+  marketplace:
+    image: hem_demo:latest
+    ports:
+      - "18080:80"
+# add appropriate values
+    environment:
+      - HEM_HEDERA_OPERATOR_ID=....
+      - HEM_HEDERA_PRIVATE_KEY=....
+      - HEM_HEDERA_OFFSETS_CONTRACT_ID=....
+      - HEM_LWORKS_API_KEY=....
+      - MICRONAUT_HTTP_SERVICES_ARMM_URL=http://172.20.0.1:8081
+      - MICRONAUT_ENVIRONMENTS=dev
+      - MICRONAUT_HTTP_SERVICES_ARMM_READ_TIMEOUT=300s
+      - MICRONAUT_HTTP_SERVICES_ARMM_CONNECT_TIMEOUT=300s
+      - LOGGER_LEVELS_io.micronaut.gcp.pubsub=debug
+      - LOGGER_LEVELS_com.google.cloud.pubsub=debug
+      - GOOGLE_CLOUD_PROJECT=hem-integration-services
+      - PUBSUB_EMULATOR_HOST=pubsub:8681
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.20
+
+
+  ingestion_orchestrator:
+    image: orchestrator-daemon:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_NODE=database:5432
+      - GOOGLE_CLOUD_PROJECT=hem-integration-services
+      - PUBSUB_EMULATOR_HOST=pubsub:8681
+      - TRANSFORMER_NODE=http://172.20.0.1:8000
+      - CLASSIFICATION_NODE=http://172.20.0.1:8010
+      - HISTORY_NODE=http://172.20.0.1:8089
+      - DROP_TABLES=true
+      - OCI_LOG_LEVEL=DEBUG
+      - PRICING_NODE=http://172.20.0.1:8081
+    depends_on:
+      database:
+        condition: service_healthy
+      pubsub:
+        condition: service_healthy
+      classification:
+        condition: service_started 
+      transformation:
+        condition: service_started 
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.11
+
+  pricing_orchestrator:
+    image: pricing-daemon:latest
+    ports:
+      - "8081:8081"
+    environment:
+      - DB_NODE=database:5432
+      - PRICEMODEL_NODE=http://172.20.0.1:8002
+      - SHOW_SQL=true
+      - OCI_LOG_LEVEL=DEBUG
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.12
+    depends_on:
+      database:
+        condition: service_healthy
+      pricing_model:
+        condition: service_started 
+
+  trader:
+    image: trader-evaluator:latest
+    ports:
+      - "8085:8082"
+    environment:
+      - DB_NODE=database:5432
+      - GOOGLE_CLOUD_PROJECT=hem-integration-services
+      - PUBSUB_EMULATOR_HOST=pubsub:8681
+      - INTEGRATION_NODE=http://172.20.0.1:8089
+      - SHOW_SQL=true
+      - OCI_LOG_LEVEL=DEBUG
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.13
+    depends_on:
+      database:
+        condition: service_healthy
+      integration_orchestrator:
+        condition: service_started
+      ingestion_orchestrator:
+        condition: service_started
+      pricing_model:
+        condition: service_started
+
+  integration_orchestrator:
+    image: integration-orchestrator:latest
+    environment:
+      - GOOGLE_CLOUD_PROJECT=hem-integration-services
+      - PUBSUB_EMULATOR_HOST=pubsub:8681
+      - API_HEM_MARKETPLACE_CLIENT_URL=http://172.20.0.1:18080
+      - HEDERA_NETWORK=testnet
+# add appropriate values
+      - LEDGER_WORKS_API_KEY=....
+      - HEM_OFFSETS_CONTRACT_ID=....
+      - TOKEN_DISCOVERY_TOKEN_IDS=....
+# buyer only required if using the automated buying function of ARMM
+#      - BUYER_OPERATOR_ID=....
+#      - BUYER_PRIVATE_KEY=....
+    ports:
+      - "8089:8080"
+    depends_on:
+      database:
+        condition: service_healthy
+      pubsub:
+        condition: service_healthy
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.19
+
+
+  classification:
+    image: nft-classifier:latest
+    ports:
+      - "8010:8080"
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.14
+
+  transformation:
+    image: nft-transformer:latest
+    ports:
+      - "8000:8080"
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.15
+
+  pubsub:
+    image: thekevjames/gcloud-pubsub-emulator:288dcd38bb
+    environment:
+      - PUBSUB_PROJECT1=hem-integration-services,nft_details:nft_details_listener,classifier:class_listener,nft_marketplace_state:marketplace_listener,pub_nft_marketplace_state:pub_nft_marketplace_state_subscription
+    ports:
+      - "8681:8681"
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.16
+    healthcheck:
+      test: nc -z 127.0.0.1 8682 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5  
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    image: postgres:14.5-bullseye
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: armm
+      POSTGRES_PASSWORD: armm
+      POSTGRES_DB: armm
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5  
+    volumes:
+      - database_data:/var/lib/postgresql/data
+    logging: *armm-logging
+    command: ["postgres", "-c", "log_statement=all", "-c", "log_destination=stderr"]
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.17
+
+  pricing_model:
+    image: nft-pricing:latest
+    ports:
+      - "8002:8080"
+    networks:
+      armm-network:
+        ipv4_address: 172.20.0.18
+
+volumes:
+  database_data:
+    driver: local
+
+networks:
+  armm-network:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
