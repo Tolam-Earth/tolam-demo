@@ -9,7 +9,7 @@ To operate the exchange, you will need the following:
     - Offset Seller
     - Offset Buyer
     - Exchange
-    - AARM Buyer
+    - ARMM Buyer
 - A Ledger Works API key available from https://www.lworks.io/eco which is used to obtain an offset's ESG data
 - An operating instance of the Guardian https://github.com/hashgraph/guardian
     - One or more Guardian-minted offsets using a supported policy.  A suitable example policy file is included in this repository
